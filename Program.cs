@@ -15,65 +15,78 @@
 
         static void Main(string[] args)
         {
-            Console.Title = "Untkers MCServerator";
-            Log($"-! MCServerator started !-");
-
-            Log("# Write please the path to your Minecraft server directory:");
-            string serverDirectory = GetServerDirectory();
-
-            GetWindowsStability();
-
-            Process? serverProcess = null;
-            DateTime serverStartTime = DateTime.MinValue;
-
-            while (true)
+            try
             {
-                bool isRunning = false;
+                Console.Title = "Untkers MCServerator";
+                Log($"-! MCServerator started !-");
 
-                if (serverProcess != null)
-                {
-                    try
-                    {
-                        isRunning = !serverProcess.HasExited;
-                    }
-                    catch
-                    {
-                        isRunning = false;
-                    }
-                }
+                Log("# Write please the path to your Minecraft server directory:");
+                string serverDirectory = GetServerDirectory();
 
-                if (!isRunning)
+                GetWindowsStability();
+
+                Process? serverProcess = null;
+                DateTime serverStartTime = DateTime.MinValue;
+
+                while (true)
                 {
+                    bool isRunning = false;
+
                     if (serverProcess != null)
                     {
-                        Log($"[503] Server process exited with code {GetSafeExitCode(serverProcess)}. Restarting...");
-                    }
-
-                    Log("||[202] Server starting...");
-                    try
-                    {
-                        var psi = new ProcessStartInfo
+                        try
                         {
-                            FileName = Path.Combine(serverDirectory, _BatFile),
-                            WorkingDirectory = serverDirectory,
-                            UseShellExecute = true
-                        };
-                        serverProcess = Process.Start(psi)!;
-                        serverStartTime = DateTime.Now;
-                        Log($"[201] Server started successfully in {serverStartTime:HH:mm:ss}.");
+                            isRunning = !serverProcess.HasExited;
+                        }
+                        catch
+                        {
+                            isRunning = false;
+                        }
                     }
-                    catch (Exception ex)
-                    {
-                        Log($"[500] Failed to start server: {ex.Message}");
-                    }
-                }
-                else
-                {
-                    TimeSpan uptime = DateTime.Now - serverStartTime;
-                    Log($"|| Server is running. Uptime: {uptime:hh\\:mm\\:ss}");
-                }
 
-                Thread.Sleep(10000);
+                    if (!isRunning)
+                    {
+                        if (serverProcess != null)
+                        {
+                            Log($"[503] Server process exited with code {GetSafeExitCode(serverProcess)}. Restarting...");
+                        }
+
+                        Log("||[202] Server starting...");
+                        try
+                        {
+                            var psi = new ProcessStartInfo
+                            {
+                                FileName = Path.Combine(serverDirectory, _BatFile),
+                                WorkingDirectory = serverDirectory,
+                                UseShellExecute = true
+                            };
+                            serverProcess = Process.Start(psi)!;
+                            serverStartTime = DateTime.Now;
+                            Log($"[201] Server started successfully in {serverStartTime:HH:mm:ss}.");
+                        }
+                        catch (Exception ex)
+                        {
+                            Log($"[500] Failed to start server: {ex.Message}");
+                        }
+                    }
+                    else
+                    {
+                        TimeSpan uptime = DateTime.Now - serverStartTime;
+                        Log($"|| Server is running. Uptime: {uptime:hh\\:mm\\:ss}");
+                    }
+
+                    Thread.Sleep(10000);
+                }
+            }
+            catch(Exception ex)
+            {
+                Console.WriteLine($"[500] An unexpected error occurred: {ex.Message}");
+                Console.WriteLine($"{ex.StackTrace}");
+            }
+            finally
+            {
+                Console.WriteLine("Press any key to exit...");
+                Console.ReadKey();
             }
         }
 
