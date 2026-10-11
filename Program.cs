@@ -56,10 +56,7 @@
                         {
                             FileName = Path.Combine(serverDirectory, _BatFile),
                             WorkingDirectory = serverDirectory,
-                            UseShellExecute = true,
-                            RedirectStandardOutput = true,
-                            RedirectStandardError = true,
-                            CreateNoWindow = true
+                            UseShellExecute = true
                         };
                         serverProcess = Process.Start(psi)!;
                         serverStartTime = DateTime.Now;
