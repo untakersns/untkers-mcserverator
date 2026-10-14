@@ -33,26 +33,18 @@
 
                 while (true)
                 {
-                    bool isRunning = false;
+                    Process? javaProcess = Process.GetProcessesByName("java")
+                                            .Concat(Process.GetProcessesByName("javaw"))
+                                            .FirstOrDefault();
 
-                    if (serverProcess != null)
+                    bool isRunning = javaProcess != null && !javaProcess.HasExited;
+
+                    if (isRunning && javaProcess != null)
                     {
                         try
                         {
-                            isRunning = !serverProcess.HasExited;
-                        }
-                        catch
-                        {
-                            isRunning = false;
-                        }
-                    }
-
-                    if (isRunning)
-                    {
-                        try
-                        {
-                            serverProcess.Refresh();
-                            long currentRAM = serverProcess.WorkingSet64 / (1024 * 1024);
+                            javaProcess.Refresh();
+                            long currentRAM = javaProcess.WorkingSet64 / (1024 * 1024); 
 
                             var uptime = DateTime.Now - serverStartTime;
                             Log($"|| Server is running. Uptime: {uptime:hh\\:mm\\:ss}, RAM Usage: {currentRAM} MB");
@@ -82,7 +74,10 @@
                             {
                                 FileName = Path.Combine(serverDirectory, _BatFile),
                                 WorkingDirectory = serverDirectory,
-                                UseShellExecute = true
+                                UseShellExecute = false,
+                                RedirectStandardInput = true,
+                                RedirectStandardOutput = true,
+                                RedirectStandardError = true
                             };
                             serverProcess = Process.Start(psi)!;
                             serverStartTime = DateTime.Now;
