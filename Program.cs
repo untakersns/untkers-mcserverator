@@ -74,7 +74,7 @@
                             {
                                 FileName = Path.Combine(serverDirectory, _BatFile),
                                 WorkingDirectory = serverDirectory,
-                                UseShellExecute = false,
+                                UseShellExecute = true,
                                 RedirectStandardInput = true,
                                 RedirectStandardOutput = true,
                                 RedirectStandardError = true
