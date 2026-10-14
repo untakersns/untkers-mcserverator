@@ -34,10 +34,17 @@
                 while (true)
                 {
                     Process? javaProcess = Process.GetProcessesByName("java")
-                                            .Concat(Process.GetProcessesByName("javaw"))
-                                            .FirstOrDefault();
+                        .Concat(Process.GetProcessesByName("javaw"))
+                        .OrderByDescending(p => { try { return p.WorkingSet64; } catch { return 0L; } })
+                        .FirstOrDefault();
 
-                    bool isRunning = javaProcess != null && !javaProcess.HasExited;
+                    bool batIsRunning = Process.GetProcessesByName("cmd")
+                        .Any(p => {
+                            try { return p.MainWindowTitle.Contains("run.bat", StringComparison.OrdinalIgnoreCase); }
+                            catch { return false; }
+                        });
+
+                    bool isRunning = (javaProcess != null && !javaProcess.HasExited) || batIsRunning;
 
                     if (isRunning && javaProcess != null)
                     {
@@ -74,10 +81,7 @@
                             {
                                 FileName = Path.Combine(serverDirectory, _BatFile),
                                 WorkingDirectory = serverDirectory,
-                                UseShellExecute = true,
-                                RedirectStandardInput = true,
-                                RedirectStandardOutput = true,
-                                RedirectStandardError = true
+                                UseShellExecute = true
                             };
                             serverProcess = Process.Start(psi)!;
                             serverStartTime = DateTime.Now;
