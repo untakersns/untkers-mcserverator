@@ -24,7 +24,7 @@
                 Log("# Write please the path to your Minecraft server directory:");
                 string serverDirectory = GetServerDirectory();
 
-                long maxRamLimit = GetDynamicMaxRam(serverDirectory);
+                long maxRamLimit = GetDynamicMaxRam(serverDirectory) / (1024L * 1024L);
 
                 GetWindowsStability();
 
@@ -221,12 +221,13 @@
 
                             long totalXmx = value * multiplier;
 
-                            long safetyBuffer = (1/2L) * 1024L * 1024L * 1024L;
+                            long safetyBuffer = 500L * 1024L * 1024L;
                             long calculatedLimit = totalXmx - safetyBuffer;
 
                             if (calculatedLimit > 0)
                             {
-                                Log($"[200 OK] Successfully read limit from {file}: -Xmx{value}{unit}. RAM until reset limit set to {(double)calculatedLimit / (1024 * 1024 * 1024):F1} GB.");
+                                long limitMb = calculatedLimit / (1024L * 1024L);
+                                Log($"[200] Successfully read limit from {file}: -Xmx{value}{unit}. Limit set to {limitMb} MB.");
                                 return calculatedLimit;
                             }
                         }
@@ -235,11 +236,11 @@
             }
             catch (Exception ex)
             {
-                Log($"[403] Error reading memory parameters: {ex.Message}");
+                Log($"[403] Error while reading memory parameter: {ex.Message}");
             }
 
-            Log("[404] Parameter -Xmx not found in server files, using default limit of 10 GB.");
-            return 10L * 1024L * 1024L * 1024L;
+            Log("[404] Parameter -Xmx not found, using default limit 9216 MB.");
+            return 9216L * 1024L * 1024L;
         }
 
         static void SoftRestart(Process process)
