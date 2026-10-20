@@ -44,6 +44,8 @@
                             catch { return false; }
                         });
 
+                    TimeSpan maxUptimeLimit = TimeSpan.FromHours(4);
+
                     bool isRunning = (javaProcess != null && !javaProcess.HasExited) || batIsRunning;
 
                     if (isRunning && javaProcess != null)
@@ -59,8 +61,25 @@
                             if (currentRAM >= maxRamLimit)
                             {
                                 Log($"[507] RAM usage exceeded limit: {currentRAM} MB >= {maxRamLimit} MB. Restarting server...");
+                                CreateBackup(serverDirectory);
                                 SoftRestart(serverProcess);
                                 serverProcess = null;
+                                continue;
+                            }
+
+                            if (uptime > maxUptimeLimit)
+                            {
+                                Log($"[202] Scheduled restart: {uptime:hh\\:mm\\:ss} > {maxUptimeLimit:hh\\:mm\\:ss}. Restarting server...");
+                                try 
+                                {
+                                    CreateBackup(serverDirectory);
+                                    SoftRestart(serverProcess); 
+                                }
+                                catch (Exception ex)
+                                {
+                                    try { javaProcess.Kill(); } catch { }
+                                }
+                                Thread.Sleep(5000);
                                 continue;
                             }
                         }
@@ -93,7 +112,7 @@
                         }
                     }
 
-                    Thread.Sleep(10000);
+                    Thread.Sleep(5000);
                 }
             }
             catch(Exception ex)
@@ -247,6 +266,9 @@
             try
             {
                 Log("[202] Initiating restart...");
+                process.StandardInput.WriteLine("say §e Server is restarting in 10 seconds!");
+                process.StandardInput.WriteLine("save-all");
+                Thread.Sleep(10000);
                 process.StandardInput.WriteLine("stop");
                 process.StandardInput.Flush();
 
@@ -262,6 +284,62 @@
             } 
             catch (Exception ex) {
                 Log($"[500] Error occurred during restart: {ex.Message}");
+            }
+        }
+
+        static void CreateBackup(string serverDir)
+        {
+            try
+            {
+                string worldsDir = Path.Combine(serverDir, "world");
+                if (!Directory.Exists(worldsDir))
+                {
+                    Log($"[404] Worlds directory not found: {worldsDir}. Backup aborted.");
+                    return;
+                }
+
+                string backupDir = Path.Combine(serverDir, "backups");
+                Directory.CreateDirectory(backupDir);
+
+                string timestamp = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss");
+                string backupPath = Path.Combine(backupDir, $"backup_{timestamp}.zip");
+
+                System.IO.Compression.ZipFile.CreateFromDirectory(serverDir, backupPath, System.IO.Compression.CompressionLevel.Optimal, false);
+                Log($"[200] Backup created successfully at {backupPath}");
+
+                CleanOldBackups(backupDir, 5);
+            }
+            catch (Exception ex)
+            {
+                Log($"[500] Failed to create backup: {ex.Message}");
+            }
+        }
+
+        static void CleanOldBackups(string backupDir, int keepCount)
+        {
+            try
+            {
+                var directoryInfo = new DirectoryInfo(backupDir);
+                var zipFiles = directoryInfo.GetFiles("backup_*.zip")
+                    .OrderByDescending(f => f.CreationTime)
+                    .Skip(keepCount);
+
+                foreach (var file in zipFiles)
+                {
+                    try
+                    {
+                        file.Delete();
+                        Log($"[200] Deleted old backup: {file.FullName}");
+                    }
+                    catch (Exception ex)
+                    {
+                        Log($"[500] Failed to delete backup {file.FullName}: {ex.Message}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Log($"[500] Failed to clean old backups: {ex.Message}");
             }
         }
     }
