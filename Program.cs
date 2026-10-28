@@ -64,8 +64,7 @@ namespace untkers_mcserverator
                             if (currentRAM >= maxRamLimit)
                             {
                                 Log($"[507] RAM usage exceeded limit: {currentRAM} MB >= {maxRamLimit} MB. Restarting server...");
-                                CreateBackup(serverDirectory);
-                                SoftRestart(javaProcess);
+                                HandleRestart(javaProcess, serverDirectory);
                                 wasRunningLastCheck = false;
                                 Thread.Sleep(5000);
                                 continue;
@@ -76,8 +75,7 @@ namespace untkers_mcserverator
                                 Log($"[202] Scheduled restart: {uptime:hh\\:mm\\:ss} > {maxUptimeLimit:hh\\:mm\\:ss}. Restarting server...");
                                 try
                                 {
-                                    CreateBackup(serverDirectory);
-                                    SoftRestart(javaProcess);
+                                    HandleRestart(javaProcess, serverDirectory);
                                 }
                                 catch (Exception ex)
                                 {
@@ -143,15 +141,6 @@ namespace untkers_mcserverator
                 File.AppendAllText(_LogPath, logMessage + Environment.NewLine);
             }
             catch { }
-        }
-
-        static int GetSafeExitCode(Process process)
-        {
-            try
-            {
-                return process.ExitCode;
-            }
-            catch { return -1; }
         }
 
         [System.Runtime.Versioning.SupportedOSPlatform("windows")]
@@ -267,33 +256,41 @@ namespace untkers_mcserverator
             return 9216L * 1024L * 1024L;
         }
 
-        static void SoftRestart(Process process)
+        static void HandleRestart(Process process, string serverDirectory)
         {
             try
             {
                 Log("[202] Initiating graceful restart via RCON...");
 
-                SendRconCommand("say §cWarning! Server is restarting in 10 seconds!");
+                SendRconCommand("say §c[SERVER] Warning! Server is restarting in 10 seconds for backup!");
                 Thread.Sleep(10000);
 
                 SendRconCommand("save-all flush");
-                Thread.Sleep(2000);
+                Thread.Sleep(3000);
 
                 SendRconCommand("stop");
 
-                if (!process.WaitForExit(30000))
+                bool exited = process.WaitForExit(30000);
+                if (!exited)
                 {
                     Log("[504] Server did not stop via RCON in time, forcing termination...");
-                    try { process.Kill(); } catch { }
+                    try
+                    {
+                        process.Kill();
+                        process.WaitForExit(5000);
+                    }
+                    catch { }
                 }
                 else
                 {
-                    Log("[200] Restart and safe shutdown completed successfully.");
+                    Log("[200] Server stopped safely via RCON.");
                 }
+
+                CreateBackup(serverDirectory);
             }
             catch (Exception ex)
             {
-                Log($"[500] Error occurred during RCON restart: {ex.Message}");
+                Log($"[500] Error occurred during restart sequence: {ex.Message}");
                 try { process.Kill(); } catch { }
             }
         }
@@ -357,7 +354,7 @@ namespace untkers_mcserverator
         static void SendRconCommand(string command)
         {
             string host = "26.215.193.197";
-            int port = 25565;
+            int port = 25575;
             string password = "1206767";
 
             try
