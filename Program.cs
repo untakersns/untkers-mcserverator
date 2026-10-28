@@ -357,7 +357,7 @@ namespace untkers_mcserverator
         static void SendRconCommand(string command)
         {
             string host = "26.215.193.197";
-            int port = 25575;
+            int port = 25565;
             string password = "1206767";
 
             try
