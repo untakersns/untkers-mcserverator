@@ -41,7 +41,7 @@ namespace untkers_mcserverator
                             catch { return false; }
                         });
 
-                    TimeSpan maxUptimeLimit = TimeSpan.FromHours(4);
+                    TimeSpan maxUptimeLimit = TimeSpan.FromMinutes(3);
 
                     bool isRunning = (javaProcess != null && !javaProcess.HasExited) || batIsRunning;
 
@@ -59,7 +59,7 @@ namespace untkers_mcserverator
                             long currentRAM = javaProcess.WorkingSet64 / (1024 * 1024);
 
                             var uptime = DateTime.Now - serverStartTime;
-                            Console.Title = $"Untkers MCServerator | Uptime: {uptime:hh\\:mm\\:ss} | RAM: {currentRAM} MB";
+                            Log($"Untkers MCServerator | Uptime: {uptime:hh\\:mm\\:ss} | RAM: {currentRAM} MB");
 
                             if (currentRAM >= maxRamLimit)
                             {
@@ -359,7 +359,7 @@ namespace untkers_mcserverator
 
             try
             {
-                using (var client = new System.Net.Sockets.TcpClient())
+                using (var client = new System.Net.Sockets.TcpClient(System.Net.Sockets.AddressFamily.InterNetwork))
                 {
                     client.Connect(host, port);
                     using (var stream = client.GetStream())
