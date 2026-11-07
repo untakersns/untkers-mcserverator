@@ -41,7 +41,7 @@ namespace untkers_mcserverator
                             catch { return false; }
                         });
 
-                    TimeSpan maxUptimeLimit = TimeSpan.FromMinutes(3);
+                    TimeSpan maxUptimeLimit = TimeSpan.FromHours(4);
 
                     bool isRunning = (javaProcess != null && !javaProcess.HasExited) || batIsRunning;
 
@@ -234,7 +234,7 @@ namespace untkers_mcserverator
 
                             long totalXmx = value * multiplier;
 
-                            long safetyBuffer = 500L * 1024L * 1024L;
+                            long safetyBuffer = 1000L * 1024L * 1024L;
                             long calculatedLimit = totalXmx - safetyBuffer;
 
                             if (calculatedLimit > 0)
@@ -353,7 +353,6 @@ namespace untkers_mcserverator
 
         static void SendRconCommand(string command)
         {
-            string host = "0.0.0.0";
             int port = 25577;
             string password = "1206767";
 
@@ -361,7 +360,7 @@ namespace untkers_mcserverator
             {
                 using (var client = new System.Net.Sockets.TcpClient(System.Net.Sockets.AddressFamily.InterNetwork))
                 {
-                    client.Connect(host, port);
+                    client.Connect(new System.Net.IPEndPoint(System.Net.IPAddress.Loopback, port));
                     using (var stream = client.GetStream())
                     {
                         if (!RconAuth(stream, password))
