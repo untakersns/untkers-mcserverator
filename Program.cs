@@ -1,16 +1,13 @@
-﻿namespace untkers_mcserverator
-{
-    using System;
-    using System.Diagnostics;
-    using System.Diagnostics.Eventing.Reader;
-    using System.IO;
-    using System.Linq;
-    using System.Text.RegularExpressions;
-    using System.Threading;
+﻿using System.Diagnostics;
+using System.Diagnostics.Eventing.Reader;
+using System.IO.Compression;
+using System.Text.RegularExpressions;
 
+namespace untkers_mcserverator
+{
     internal class Program
     {
-        private static readonly string _ServerDirectory = "server_path.txt"; //@"..\minecraftserver1-21-1-neo or else versions";
+        private static readonly string _ServerDirectory = "server_path.txt";
         private static readonly string _BatFile = "run.bat";
         private static readonly string _LogPath = "server_monitoring.log";
 
@@ -24,55 +21,80 @@
                 Log("# Write please the path to your Minecraft server directory:");
                 string serverDirectory = GetServerDirectory();
 
-                long maxRamLimit = GetDynamicMaxRam(serverDirectory);
+                long maxRamLimit = GetDynamicMaxRam(serverDirectory) / (1024L * 1024L);
 
                 GetWindowsStability();
 
-                Process? serverProcess = null;
                 DateTime serverStartTime = DateTime.MinValue;
+                bool wasRunningLastCheck = false;
 
                 while (true)
                 {
-                    bool isRunning = false;
+                    Process? javaProcess = Process.GetProcessesByName("java")
+                        .Concat(Process.GetProcessesByName("javaw"))
+                        .OrderByDescending(p => { try { return p.WorkingSet64; } catch { return 0L; } })
+                        .FirstOrDefault();
 
-                    if (serverProcess != null)
+                    bool batIsRunning = Process.GetProcessesByName("cmd")
+                        .Any(p => {
+                            try { return p.MainWindowTitle.Contains("run.bat", StringComparison.OrdinalIgnoreCase); }
+                            catch { return false; }
+                        });
+
+                    TimeSpan maxUptimeLimit = TimeSpan.FromHours(4);
+
+                    bool isRunning = (javaProcess != null && !javaProcess.HasExited) || batIsRunning;
+
+                    if (isRunning && javaProcess != null)
                     {
+                        if (!wasRunningLastCheck)
+                        {
+                            serverStartTime = DateTime.Now;
+                            wasRunningLastCheck = true;
+                        }
+
                         try
                         {
-                            isRunning = !serverProcess.HasExited;
-                        }
-                        catch
-                        {
-                            isRunning = false;
-                        }
-                    }
-
-                    if (isRunning)
-                    {
-                        try
-                        {
-                            serverProcess.Refresh();
-                            long currentRAM = serverProcess.WorkingSet64 / (1024 * 1024);
+                            javaProcess.Refresh();
+                            long currentRAM = javaProcess.WorkingSet64 / (1024 * 1024);
 
                             var uptime = DateTime.Now - serverStartTime;
-                            Log($"|| Server is running. Uptime: {uptime:hh\\:mm\\:ss}, RAM Usage: {currentRAM} MB");
+                            Log($"Untkers MCServerator | Uptime: {uptime:hh\\:mm\\:ss} | RAM: {currentRAM} MB");
 
                             if (currentRAM >= maxRamLimit)
                             {
                                 Log($"[507] RAM usage exceeded limit: {currentRAM} MB >= {maxRamLimit} MB. Restarting server...");
-                                SoftRestart(serverProcess);
-                                serverProcess = null;
+                                HandleRestart(javaProcess, serverDirectory);
+                                wasRunningLastCheck = false;
+                                Thread.Sleep(5000);
+                                continue;
+                            }
+
+                            if (uptime > maxUptimeLimit)
+                            {
+                                Log($"[202] Scheduled restart: {uptime:hh\\:mm\\:ss} > {maxUptimeLimit:hh\\:mm\\:ss}. Restarting server...");
+                                try
+                                {
+                                    HandleRestart(javaProcess, serverDirectory);
+                                }
+                                catch (Exception ex)
+                                {
+                                    Log($"[500] Error during scheduled restart: {ex.Message}");
+                                    try { javaProcess.Kill(); } catch { }
+                                }
+                                wasRunningLastCheck = false;
+                                Thread.Sleep(5000);
                                 continue;
                             }
                         }
                         catch { }
                     }
-
-                    else if (!isRunning)
+                    else
                     {
-                        if (serverProcess != null)
+                        if (wasRunningLastCheck)
                         {
-                            Log($"[503] Server process exited with code {GetSafeExitCode(serverProcess)}. Restarting...");
+                            Log("[503] Server process stopped or crashed.");
+                            wasRunningLastCheck = false;
                         }
 
                         Log("||[202] Server starting...");
@@ -84,8 +106,9 @@
                                 WorkingDirectory = serverDirectory,
                                 UseShellExecute = true
                             };
-                            serverProcess = Process.Start(psi)!;
+                            Process.Start(psi);
                             serverStartTime = DateTime.Now;
+                            wasRunningLastCheck = true;
                             Log($"[201] Server started successfully in {serverStartTime:HH:mm:ss}.");
                         }
                         catch (Exception ex)
@@ -97,7 +120,7 @@
                     Thread.Sleep(10000);
                 }
             }
-            catch(Exception ex)
+            catch (Exception ex)
             {
                 Console.WriteLine($"[500] An unexpected error occurred: {ex.Message}");
                 Console.WriteLine($"{ex.StackTrace}");
@@ -120,19 +143,9 @@
             catch { }
         }
 
-        static int GetSafeExitCode(Process process)
-        {
-            try
-            {
-                return process.ExitCode;
-            }
-            catch { return -1; }
-        }
-
         [System.Runtime.Versioning.SupportedOSPlatform("windows")]
         static void GetWindowsStability()
         {
-            //todo Linux port
             if (!OperatingSystem.IsWindows())
             {
                 Log("[403] Windows stability check skipped: not running on Windows.");
@@ -182,7 +195,7 @@
             {
                 Console.Write("# Please enter the path to your Minecraft server directory: ");
                 string inputPath = Console.ReadLine()?.Trim() ?? string.Empty;
-                if(inputPath.Contains('"')) inputPath = inputPath.Trim('"');
+                if (inputPath.Contains('"')) inputPath = inputPath.Trim('"');
 
                 if (Directory.Exists(inputPath))
                 {
@@ -221,12 +234,13 @@
 
                             long totalXmx = value * multiplier;
 
-                            long safetyBuffer = (1/2L) * 1024L * 1024L * 1024L;
+                            long safetyBuffer = 1000L * 1024L * 1024L;
                             long calculatedLimit = totalXmx - safetyBuffer;
 
                             if (calculatedLimit > 0)
                             {
-                                Log($"[200 OK] Successfully read limit from {file}: -Xmx{value}{unit}. RAM until reset limit set to {(double)calculatedLimit / (1024 * 1024 * 1024):F1} GB.");
+                                long limitMb = calculatedLimit / (1024L * 1024L);
+                                Log($"[200] Successfully read limit from {file}: -Xmx{value}{unit}. Limit set to {limitMb} MB.");
                                 return calculatedLimit;
                             }
                         }
@@ -235,34 +249,191 @@
             }
             catch (Exception ex)
             {
-                Log($"[403] Error reading memory parameters: {ex.Message}");
+                Log($"[403] Error while reading memory parameter: {ex.Message}");
             }
 
-            Log("[404] Parameter -Xmx not found in server files, using default limit of 10 GB.");
-            return 10L * 1024L * 1024L * 1024L;
+            Log("[404] Parameter -Xmx not found, using default limit 9216 MB.");
+            return 9216L * 1024L * 1024L;
         }
 
-        static void SoftRestart(Process process)
+        static void HandleRestart(Process process, string serverDirectory)
         {
             try
             {
-                Log("[202] Initiating restart...");
-                process.StandardInput.WriteLine("stop");
-                process.StandardInput.Flush();
+                Log("[202] Initiating graceful restart via RCON...");
 
-                if (!process.WaitForExit(30000))
+                SendRconCommand("say §c[SERVER] Warning! Server is restarting in 10 seconds for backup!");
+                Thread.Sleep(10000);
+
+                SendRconCommand("save-all flush");
+                Thread.Sleep(3000);
+
+                SendRconCommand("stop");
+
+                bool exited = process.WaitForExit(30000);
+                if (!exited)
                 {
-                    Log("[504] Server did not respond in time, forcing termination...");
-                    process.Kill();
+                    Log("[504] Server did not stop via RCON in time, forcing termination...");
+                    try
+                    {
+                        process.Kill();
+                        process.WaitForExit(5000);
+                    }
+                    catch { }
                 }
                 else
                 {
-                    Log("[200] Restart completed successfully.");
+                    Log("[200] Server stopped safely via RCON.");
                 }
-            } 
-            catch (Exception ex) {
-                Log($"[500] Error occurred during restart: {ex.Message}");
+
+                CreateBackup(serverDirectory);
             }
+            catch (Exception ex)
+            {
+                Log($"[500] Error occurred during restart sequence: {ex.Message}");
+                try { process.Kill(); } catch { }
+            }
+        }
+
+        static void CreateBackup(string serverDir)
+        {
+            try
+            {
+                string worldDir = Path.Combine(serverDir, "world");
+                if (!Directory.Exists(worldDir))
+                {
+                    Log($"[404] World directory not found: {worldDir}. Backup aborted.");
+                    return;
+                }
+
+                string backupDir = Path.Combine(serverDir, "backups");
+                Directory.CreateDirectory(backupDir);
+
+                string timestamp = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss");
+                string backupPath = Path.Combine(backupDir, $"world_backup_{timestamp}.zip");
+
+                ZipFile.CreateFromDirectory(worldDir, backupPath, CompressionLevel.Optimal, false);
+                Log($"[200] World backup created successfully at {backupPath}");
+
+                CleanOldBackups(backupDir, 5);
+            }
+            catch (Exception ex)
+            {
+                Log($"[500] Failed to create backup: {ex.Message}");
+            }
+        }
+
+        static void CleanOldBackups(string backupDir, int keepCount)
+        {
+            try
+            {
+                var directoryInfo = new DirectoryInfo(backupDir);
+                var zipFiles = directoryInfo.GetFiles("world_backup_*.zip")
+                    .OrderByDescending(f => f.CreationTime)
+                    .Skip(keepCount);
+
+                foreach (var file in zipFiles)
+                {
+                    try
+                    {
+                        file.Delete();
+                        Log($"[200] Deleted old backup: {file.FullName}");
+                    }
+                    catch (Exception ex)
+                    {
+                        Log($"[500] Failed to delete backup {file.FullName}: {ex.Message}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Log($"[500] Failed to clean old backups: {ex.Message}");
+            }
+        }
+
+        static void SendRconCommand(string command)
+        {
+            int port = 25577;
+            string password = "1206767";
+
+            try
+            {
+                using (var client = new System.Net.Sockets.TcpClient(System.Net.Sockets.AddressFamily.InterNetwork))
+                {
+                    client.Connect(new System.Net.IPEndPoint(System.Net.IPAddress.Loopback, port));
+                    using (var stream = client.GetStream())
+                    {
+                        if (!RconAuth(stream, password))
+                        {
+                            Log("[500] RCON Authentication failed. Check password.");
+                            return;
+                        }
+
+                        RconExecute(stream, 2, command);
+                        Log($"[200] RCON command sent successfully: {command}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Log($"[500] RCON connection error: {ex.Message}");
+            }
+        }
+
+        static bool RconAuth(System.Net.Sockets.NetworkStream stream, string password)
+        {
+            int requestId = 1;
+            int packetType = 3;
+            byte[] payload = System.Text.Encoding.ASCII.GetBytes(password);
+
+            SendRconPacket(stream, requestId, packetType, payload);
+            var response = ReadRconPacket(stream);
+
+            return response.Id == requestId;
+        }
+
+        static void RconExecute(System.Net.Sockets.NetworkStream stream, int requestId, string command)
+        {
+            byte[] payload = System.Text.Encoding.ASCII.GetBytes(command);
+            SendRconPacket(stream, requestId, 2, payload);
+            ReadRconPacket(stream);
+        }
+
+        static void SendRconPacket(System.Net.Sockets.NetworkStream stream, int id, int type, byte[] payload)
+        {
+            int length = payload.Length + 10;
+            byte[] buffer = new byte[length + 4];
+
+            BitConverter.GetBytes(length).CopyTo(buffer, 0);
+            BitConverter.GetBytes(id).CopyTo(buffer, 4);
+            BitConverter.GetBytes(type).CopyTo(buffer, 8);
+            payload.CopyTo(buffer, 12);
+            buffer[^2] = 0;
+            buffer[^1] = 0;
+
+            stream.Write(buffer, 0, buffer.Length);
+        }
+
+        static (int Id, int Type, string Body) ReadRconPacket(System.Net.Sockets.NetworkStream stream)
+        {
+            byte[] sizeBuffer = new byte[4];
+            stream.ReadExactly(sizeBuffer, 0, 4);
+            int length = BitConverter.ToInt32(sizeBuffer, 0);
+
+            byte[] dataBuffer = new byte[length];
+            int totalRead = 0;
+            while (totalRead < length)
+            {
+                int read = stream.Read(dataBuffer, totalRead, length - totalRead);
+                if (read == 0) break;
+                totalRead += read;
+            }
+
+            int id = BitConverter.ToInt32(dataBuffer, 0);
+            int type = BitConverter.ToInt32(dataBuffer, 4);
+            string body = System.Text.Encoding.ASCII.GetString(dataBuffer, 8, length - 10);
+
+            return (id, type, body);
         }
     }
 }
